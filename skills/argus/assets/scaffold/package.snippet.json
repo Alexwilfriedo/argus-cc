@@ -1,0 +1,27 @@
+{
+  "_comment": "Fusionner ces blocs dans le package.json du projet. NE PAS copier tel quel comme package.json. Le tag de l'image Docker (argus:visual:docker-baseline) DOIT correspondre EXACTEMENT à la version de @playwright/test installée — bumper les deux ensemble.",
+  "scripts": {
+    "argus:test": "playwright test",
+    "argus:explore": "ARGUS_MODE=EXPLORE playwright test",
+    "argus:regress": "ARGUS_MODE=REGRESS playwright test",
+    "argus:smoke": "playwright test tests/smoke.spec.ts",
+    "argus:a11y": "playwright test tests/a11y.spec.ts",
+    "argus:visual": "playwright test tests/visual.spec.ts",
+    "argus:visual:update": "playwright test tests/visual.spec.ts --update-snapshots",
+    "argus:visual:docker-baseline": "docker run --rm --network host -v \"$PWD:/work\" -w /work mcr.microsoft.com/playwright:v1.61.0-noble npx playwright test tests/visual.spec.ts --update-snapshots",
+    "argus:links": "playwright test tests/links.spec.ts",
+    "argus:sec": "playwright test tests/security.spec.ts tests/authz.spec.ts",
+    "argus:zap": "bash scripts/argus-zap.sh",
+    "argus:sca": "node scripts/argus-sca.mjs",
+    "argus:report": "node scripts/argus-report.mjs",
+    "argus:show": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.0",
+    "@axe-core/playwright": "^4.11.0",
+    "axe-core": "^4.11.0",
+    "web-vitals": "^4.2.0 || ^5.0.0",
+    "@types/node": "^20.11.0",
+    "typescript": "^5.4.0"
+  }
+}

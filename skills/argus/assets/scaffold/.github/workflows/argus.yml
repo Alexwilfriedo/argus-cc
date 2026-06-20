@@ -1,0 +1,147 @@
+# argus — GitHub Actions CI
+#
+# Versions confirmees (juin 2026) :
+#   actions/checkout@v6, actions/setup-node@v6, actions/upload-artifact@v7
+#   (les runners forcent le runtime Node 24 des le 02/06/2026 ; les majors
+#    v4 emettent un warning de deprecation).
+# Cible : @playwright/test 1.61.0.
+name: argus
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      shards:
+        description: 'Nombre de shards (1 = pas de fan-out)'
+        required: false
+        default: '1'
+
+# Annule les runs precedents sur la meme ref (economie de minutes CI).
+concurrency:
+  group: argus-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: e2e (shard ${{ matrix.shard }}/${{ matrix.total }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    strategy:
+      # On continue les autres shards meme si l'un echoue (vue complete).
+      fail-fast: false
+      matrix:
+        # Matrice de shards statique. Pour 1 seul shard, laisser [1] / total 1.
+        # Pour fan-out, dupliquer les entrees (ex: shard 1..4, total 4).
+        shard: [1]
+        total: [1]
+        # Exemple 4 shards (decommenter et retirer le bloc ci-dessus) :
+        # shard: [1, 2, 3, 4]
+        # total: [4]
+
+    env:
+      # Config injectee depuis les secrets du repo / de l'environnement.
+      ARGUS_BASE_URL: ${{ secrets.ARGUS_BASE_URL }}
+      QA_USER: ${{ secrets.QA_USER }}
+      QA_PASS: ${{ secrets.QA_PASS }}
+      CI: 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Installe les navigateurs + dependances systeme. Le cache npm ne couvre
+      # PAS les binaires navigateurs : laisser cette etape a chaque run, ou
+      # ajouter un actions/cache dedie sur ~/.cache/ms-playwright si besoin.
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Run Playwright tests
+        run: npx playwright test --shard=${{ matrix.shard }}/${{ matrix.total }}
+
+      # Artifacts : toujours uploades (succes comme echec) pour debug.
+      - name: Upload Playwright HTML report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-${{ matrix.shard }}
+          path: playwright-report/
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Upload test-results (traces, screenshots, videos)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-${{ matrix.shard }}
+          path: test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload JUnit report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: junit-${{ matrix.shard }}
+          path: test-results/junit.xml
+          retention-days: 14
+          if-no-files-found: warn
+
+  # Job sécurité : SCA (dépendances) + DAST (OWASP ZAP). Les specs security/authz
+  # tournent déjà dans le job `test` (ce sont des specs Playwright).
+  security:
+    name: security (SCA + DAST)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ARGUS_BASE_URL: ${{ secrets.ARGUS_BASE_URL }}
+      # Optionnel : "Bearer <token>" pour un scan ZAP authentifié.
+      ARGUS_ZAP_AUTH_HEADER_VALUE: ${{ secrets.ARGUS_ZAP_AUTH_HEADER_VALUE }}
+      CI: 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup Node 20
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: SCA — dépendances / CVE (npm audit)
+        run: node scripts/argus-sca.mjs
+      # DAST passif : ne s'exécute que si une cible déployée est fournie.
+      - name: DAST — OWASP ZAP baseline
+        if: ${{ env.ARGUS_BASE_URL != '' }}
+        run: bash scripts/argus-zap.sh
+      - name: Upload rapports sécurité
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: argus-security-report
+          path: argus-report/
+          retention-days: 14
+          if-no-files-found: warn
+
+# NOTE BASELINES VISUELLES :
+# Les snapshots de reference (toHaveScreenshot) doivent etre GENERES dans
+# l'image Docker Playwright officielle pour que le rendu corresponde au CI :
+#
+#   docker run --rm --network host -v $(pwd):/work -w /work \
+#     mcr.microsoft.com/playwright:v1.61.0-noble \
+#     npx playwright test --update-snapshots
+#
+# Generer les baselines sur macOS/Windows en local produira des diffs de
+# rendu (polices, antialiasing) qui feront echouer le CI Linux.

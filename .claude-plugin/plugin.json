@@ -1,0 +1,22 @@
+{
+  "name": "argus",
+  "version": "1.0.0",
+  "description": "Argus — agent QA/QE pour applications web : audit live exploratoire (EXPLORE), mode démo vidéo (DEMO) et harness @playwright/test de non-régression (REGRESS) — régression visuelle, accessibilité axe/WCAG, Core Web Vitals, liens, console/réseau, sécurité (DAST/SCA/headers/authz), rapports JSON/JUnit/HTML, CI. Invocable via /argus.",
+  "author": {
+    "name": "Alex Wilfried OUATTARA",
+    "email": "alexwilfriedo@gmail.com"
+  },
+  "license": "MIT",
+  "keywords": [
+    "qa",
+    "qe",
+    "playwright",
+    "e2e",
+    "non-regression",
+    "visual-regression",
+    "accessibility",
+    "core-web-vitals",
+    "security",
+    "ci"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "name": "alexwilfriedo",
+  "owner": {
+    "name": "Alex Wilfried OUATTARA",
+    "email": "alexwilfriedo@gmail.com"
+  },
+  "metadata": {
+    "description": "Marketplace personnel — skills QA/QE et outillage Claude Code"
+  },
+  "plugins": [
+    {
+      "name": "argus",
+      "source": "./",
+      "description": "Argus — agent QA/QE (audit live, démo vidéo, non-régression CI) + scaffold @playwright/test prêt à l'emploi. Invocable via /argus.",
+      "version": "1.0.0",
+      "author": {
+        "name": "Alex Wilfried OUATTARA"
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+# Argus / Playwright — à ajouter au .gitignore du projet (fusion, ne pas écraser)
+
+# État de session authentifiée — contient des jetons sensibles, NE JAMAIS committer
+playwright/.auth/
+
+# Artefacts Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
+# Rapport HTML Argus
+/argus-report/
+
+# Dépendances
+/node_modules/
