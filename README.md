@@ -15,7 +15,7 @@ Trois modes : **EXPLORE** (audit), **DEMO** (capture YouTube), **REGRESS** (suit
 ### Option A — Plugin (recommandé)
 Dans Claude Code :
 ```
-/plugin marketplace add https://github.com/Alexwilfriedo/argus
+/plugin marketplace add https://github.com/Alexwilfriedo/argus-cc
 /plugin install argus@alexwilfriedo
 ```
 > En local sans Git : `/plugin marketplace add /chemin/vers/argus`.
