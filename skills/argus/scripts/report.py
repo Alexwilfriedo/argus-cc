@@ -222,10 +222,11 @@ def build_html(campaign, base):
             details = []
             if note.get("conflict"):
                 details.append(f"<div><b>À arbitrer</b> {h(note['conflict'])}</div>")
-                details.append(f"<div><b>Résultat brut</b> {LABEL[raw.get(name, 'blocked')]}</div>")
+                source_label = "Résultat déclaré" if "observations" in target else "Résultat brut"
+                details.append(f"<div><b>{source_label}</b> {LABEL[raw.get(name, 'blocked')]}</div>")
             for key, label in (("severity", "Sévérité"), ("expected", "Attendu"),
                                ("actual", "Observé"), ("repro", "Reproduire"),
-                               ("evidence", "Preuve"), ("action", "Suite")):
+                               ("evidence", "Référence"), ("action", "Suite")):
                 if note.get(key):
                     details.append(f"<div><b>{label}</b> {h(note[key])}</div>")
             if note.get("screenshot"):
