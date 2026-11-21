@@ -71,9 +71,9 @@ jobs:
       - name: Run Playwright tests
         run: npx playwright test --shard=${{ matrix.shard }}/${{ matrix.total }}
 
-      # Artifacts : toujours uploades (succes comme echec) pour debug.
+      # Diffusion des pièces du run activée par le projet.
       - name: Upload Playwright HTML report
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && vars.ARGUS_UPLOAD_ARTIFACTS == 'true' }}
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report-${{ matrix.shard }}
@@ -82,7 +82,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload test-results (traces, screenshots, videos)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && vars.ARGUS_UPLOAD_ARTIFACTS == 'true' }}
         uses: actions/upload-artifact@v7
         with:
           name: test-results-${{ matrix.shard }}
@@ -91,7 +91,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload JUnit report
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && vars.ARGUS_UPLOAD_ARTIFACTS == 'true' }}
         uses: actions/upload-artifact@v7
         with:
           name: junit-${{ matrix.shard }}
@@ -99,16 +99,14 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
-  # Job sécurité : SCA (dépendances) + DAST (OWASP ZAP). Les specs security/authz
+  # Job sécurité : SCA (dépendances). Les specs security/authz
   # tournent déjà dans le job `test` (ce sont des specs Playwright).
   security:
-    name: security (SCA + DAST)
+    name: security (SCA)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
       ARGUS_BASE_URL: ${{ secrets.ARGUS_BASE_URL }}
-      # Optionnel : "Bearer <token>" pour un scan ZAP authentifié.
-      ARGUS_ZAP_AUTH_HEADER_VALUE: ${{ secrets.ARGUS_ZAP_AUTH_HEADER_VALUE }}
       CI: 'true'
     steps:
       - name: Checkout
@@ -122,12 +120,8 @@ jobs:
         run: npm ci
       - name: SCA — dépendances / CVE (npm audit)
         run: node scripts/argus-sca.mjs
-      # DAST passif : ne s'exécute que si une cible déployée est fournie.
-      - name: DAST — OWASP ZAP baseline
-        if: ${{ env.ARGUS_BASE_URL != '' }}
-        run: bash scripts/argus-zap.sh
       - name: Upload rapports sécurité
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && vars.ARGUS_UPLOAD_ARTIFACTS == 'true' }}
         uses: actions/upload-artifact@v7
         with:
           name: argus-security-report

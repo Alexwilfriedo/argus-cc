@@ -75,7 +75,7 @@ export const argus = {
   /** Authentification. Secrets via env UNIQUEMENT (jamais en dur). */
   auth: {
     /** ARGUS_AUTH=off → exécution en visiteur anonyme. */
-    required: !['off', 'false', '0', 'no'].includes(envOr('ARGUS_AUTH', 'on').toLowerCase()),
+    required: !['off', 'false', '0', 'no'].includes(envOr('ARGUS_AUTH', process.env.CI || process.env.QA_USER || process.env.QA_PASS ? 'on' : 'off').toLowerCase()),
     /** Doit correspondre à use.storageState dans playwright.config.ts. */
     storageState: 'playwright/.auth/user.json',
     loginPath: '/login',
@@ -129,7 +129,7 @@ export const argus = {
 
   /**
    * Rôles pour les tests d'autorisation (authz/IDOR). Chaque rôle a son storageState.
-   * Vide → les tests cross-rôle sont skippés (mais le contrôle anonyme reste actif).
+   * Les rôles servent aux assertions métier écrites dans le projet.
    */
   roles: [
     // { name: 'admin', storageState: 'playwright/.auth/admin.json' },

@@ -19,6 +19,9 @@ mkdir -p "$(dirname "$run")"
 mkdir "$run" || { echo "Choisir un nouveau dossier pour cette exécution." >&2; exit 2; }
 maestro --version > "$run/maestro-version.txt"
 printf '%s\n' "$device" "$app" > "$run/target.txt"
+if [ -n "${ARGUS_BUILD:-}" ]; then
+  printf '%s\n' "$ARGUS_BUILD" > "$run/build.txt"
+fi
 status=0
 maestro --device "$device" test -e "APP_ID=$app" -e "READY_ID=${READY_ID:-}" \
   --format JUNIT --output "$run/junit.xml" --test-output-dir "$run/artifacts" \

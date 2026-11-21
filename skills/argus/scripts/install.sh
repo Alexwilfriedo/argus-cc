@@ -6,6 +6,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SCAFFOLD_DIR="$SKILL_DIR/assets/scaffold"
+with_ci=false
+if [[ "${1:-}" == "--with-ci" ]]; then
+  with_ci=true
+  shift
+fi
 TARGET="${1:-$(pwd)}"
 
 if [ ! -d "$SCAFFOLD_DIR" ]; then
@@ -23,8 +28,11 @@ copied=0
 skipped=0
 while IFS= read -r src; do
   rel="${src#"$SCAFFOLD_DIR"/}"
+  if [[ "$rel" == .github/workflows/* && "$with_ci" == false ]]; then
+    continue
+  fi
   dest="$TARGET/$rel"
-  if [ -e "$dest" ]; then
+  if [ -e "$dest" ] || [ -L "$dest" ]; then
     echo "  ⏭️  existe déjà, conservé : $rel"
     skipped=$((skipped + 1))
   else

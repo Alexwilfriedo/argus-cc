@@ -34,7 +34,12 @@ test.describe('Accessibilité (axe WCAG 2.0/2.1 A+AA)', () => {
       makeAxeBuilder,
     }, testInfo) => {
       // baseURL via config ; 'load' couvre le contenu critique.
-      await page.goto(route, { waitUntil: 'load' });
+      const response = await page.goto(route, { waitUntil: 'load' });
+      expect(response?.ok(), `Route indisponible : ${route}`).toBe(true);
+      const expected = new URL(route, argus.baseURL);
+      const actual = new URL(page.url());
+      expect(actual.origin + actual.pathname.replace(/\/$/, ''), 'Vérifier la route effectivement auditée')
+        .toBe(expected.origin + expected.pathname.replace(/\/$/, ''));
 
       const results = await makeAxeBuilder().analyze();
       await attachAxeResults(testInfo, results, `axe-${name}`);
@@ -62,6 +67,7 @@ test.describe('Visibilité du focus clavier', () => {
 
     const MAX_TABS = 15; // borne raisonnable pour parcourir le header/nav.
     const offenders: string[] = [];
+    let observed = 0;
 
     for (let i = 0; i < MAX_TABS; i++) {
       await page.keyboard.press('Tab');
@@ -89,11 +95,13 @@ test.describe('Visibilité du focus clavier', () => {
       if (focusInfo === null) {
         break; // plus d'élément focusable atteignable
       }
+      observed += 1;
       if (!focusInfo.hasVisibleFocus) {
         offenders.push(`${focusInfo.tag} "${focusInfo.label}"`);
       }
     }
 
+    test.skip(observed === 0, 'Aucun élément focalisé pendant le contrôle.');
     await testInfo.attach('focus-visibility-offenders', {
       body: JSON.stringify(offenders, null, 2),
       contentType: 'application/json',

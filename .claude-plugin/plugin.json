@@ -1,6 +1,6 @@
 {
   "name": "argus",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Agent QA pour audits et tests de non-régression web, Android et iOS. Conçoit les cas limites et contradictions métier, exécute Playwright ou Maestro et remet un rapport PDF avec les résultats et les preuves.",
   "author": {
     "name": "Alex Wilfried OUATTARA",

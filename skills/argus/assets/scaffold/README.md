@@ -34,13 +34,19 @@ actifs, `routes` auditées, `breakpoints` visuels, `dynamicSelectors` masqués,
 |----------|------|--------|
 | `ARGUS_BASE_URL` | URL de base (prioritaire sur argus.config) | `http://localhost:3000` |
 | `ARGUS_MODE` | `EXPLORE` \| `DEMO` \| `REGRESS` | `REGRESS` |
-| `ARGUS_AUTH` | `off` → visiteur anonyme | `on` |
+| `ARGUS_AUTH` | `off` → visiteur anonyme | activé en CI ou si des identifiants sont fournis |
 | `ARGUS_A11Y_IMPACT` | seuil a11y bloquant (`minor`…`critical`) | `serious` |
 | `QA_USER` / `QA_PASS` | identifiants du compte de test (secrets) | — |
 | `ARGUS_LINK_BUDGET` | nb max de liens vérifiés | `50` |
 
+> `ARGUS_BUILD` associe un identifiant de build déclaré au résultat Playwright.
+
 > **Secrets** : `QA_USER`/`QA_PASS` viennent UNIQUEMENT de l'environnement (CI secrets
 > ou `.env` gitignoré). Jamais en dur. `playwright/.auth/` est gitignoré (jetons de session).
+
+## Intégration continue
+
+Le lanceur installe le workflow avec `bash install.sh --with-ci PROJET`. La variable de dépôt `ARGUS_UPLOAD_ARTIFACTS=true` active la diffusion des traces et rapports dans GitHub Actions. Vérifier leur contenu et les destinataires avant activation.
 
 ## Authentification
 
@@ -75,7 +81,7 @@ Dimension SECURITY **non destructive** (détection, pas exploitation) :
 - `npm run argus:sca` — `npm audit` (CVE des dépendances) → `argus-report/sca.json` ; échoue sur
   high/critical (surcharge `ARGUS_SCA_FAIL_ON`). Détecte aussi osv-scanner / Trivy s'ils sont là.
 - `npm run argus:zap` — DAST **OWASP ZAP baseline** (`ghcr.io/zaproxy/zaproxy:stable`, Docker
-  requis), passif → `argus-report/zap.{html,json,md}`. Auth : `ARGUS_ZAP_AUTH_HEADER_VALUE="Bearer <token>"`.
+  requis), passif → `argus-report/zap.{html,json,md}`. Pour une cible nécessitant une session, utiliser un rapport expurgé du projet.
 
 > **Gotcha dev-server (Vite/Next…)** : un conteneur ne voit pas le `localhost` de l'hôte — le
 > script réécrit la cible en `host.docker.internal`. Mais Vite **rejette** ce Host (`403`,

@@ -6,7 +6,7 @@ import { argus } from '../argus.config';
  *
  * 1) Un visiteur ANONYME ne doit pas atteindre les routes protégées
  *    (argus.config.protectedRoutes). Actif dès qu'au moins une route est déclarée.
- * 2) Isolation inter-rôles (IDOR) — template, actif si >= 2 rôles configurés
+ * 2) Isolation inter-rôles (IDOR) — exemple à compléter avec une assertion métier
  *    (argus.config.roles, chacun avec son storageState).
  *
  * Non destructif : on NAVIGUE et on observe le verdict d'accès, sans rien muter.
@@ -27,10 +27,14 @@ test.describe("argus :: authz (contrôle d'accès)", () => {
     try {
       for (const route of argus.protectedRoutes) {
         const url = new URL(route, argus.baseURL).toString();
-        const res = await page.goto(url, { waitUntil: 'load' }).catch(() => null);
+        const res = await page.goto(url, { waitUntil: 'load' });
         const status = res?.status() ?? 0;
+        expect(status, 'Réponse HTTP absente').toBeGreaterThan(0);
+        expect(status, 'Service indisponible').toBeLessThan(500);
         const finalUrl = page.url();
-        const redirectedToAuth = /login|signin|sign-in|auth|connexion/i.test(finalUrl);
+        const login = new URL(argus.auth.loginPath, argus.baseURL);
+        const destination = new URL(finalUrl);
+        const redirectedToAuth = destination.origin === login.origin && destination.pathname === login.pathname && url !== finalUrl && status >= 200 && status < 400;
         const blockedStatus = status === 401 || status === 403;
         // Accès correctement refusé si 401/403 OU redirigé vers une page d'auth.
         if (!blockedStatus && !redirectedToAuth) {
@@ -47,26 +51,5 @@ test.describe("argus :: authz (contrôle d'accès)", () => {
     ).toEqual([]);
   });
 
-  test('isolation inter-rôles (IDOR) — template', async ({ browser }) => {
-    test.skip(
-      argus.roles.length < 2,
-      'Configurer >= 2 rôles (argus.config.roles) pour activer ce contrôle.',
-    );
-
-    // Patron : le storageState du rôle A ne doit PAS accéder à une ressource
-    // réservée au rôle B. À adapter aux ressources réelles de l'app.
-    const [roleA, roleB] = argus.roles;
-    const ctxA = await browser.newContext({ storageState: roleA.storageState });
-    try {
-      // Exemple à dé-commenter et adapter :
-      // const pageA = await ctxA.newPage();
-      // const url = new URL('/admin/secret-de-' + roleB.name, argus.baseURL).toString();
-      // const res = await pageA.goto(url, { waitUntil: 'load' });
-      // expect([401, 403], `${roleA.name} ne doit pas accéder à la ressource de ${roleB.name}`)
-      //   .toContain(res?.status() ?? 0);
-      expect(roleB.name, 'template authz : configurer la ressource réelle').toBeTruthy();
-    } finally {
-      await ctxA.close();
-    }
-  });
+  test.fixme('isolation inter-rôles — assertion métier à fournir dans le projet', () => {});
 });

@@ -4,6 +4,7 @@ import base64
 from collections import Counter
 from datetime import datetime, timezone
 from html import escape
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -14,7 +15,7 @@ import xml.etree.ElementTree as ET
 
 
 LABEL = {"pass": "Réussi", "fail": "Échec", "flaky": "Instable",
-         "skip": "Ignoré", "blocked": "Non vérifié"}
+         "skip": "Ignoré", "blocked": "Non vérifié", "xfail": "Échec attendu"}
 
 
 def add(results, name, status):
@@ -42,8 +43,11 @@ def mobile_results(folder):
     for case in root.iter("testcase"):
         reported = case.get("status", "").upper()
         status = {"": "pass", "SUCCESS": "pass", "PASSED": "pass", "FAILED": "fail",
-                  "FAILURE": "fail", "ERROR": "fail", "SKIPPED": "skip"}.get(reported, "blocked")
-        if case.find("failure") is not None or case.find("error") is not None:
+                  "FAILURE": "fail", "ERROR": "blocked", "SKIPPED": "skip"}.get(reported, "blocked")
+        if case.find("error") is not None:
+            status = "blocked"
+            issues.append(f"Erreur d’exécution · {case.get('name')}")
+        elif case.find("failure") is not None:
             status = "fail"
         elif case.find("skipped") is not None:
             status = "skip"
@@ -53,10 +57,14 @@ def mobile_results(folder):
     return cases, issues
 
 
-def web_results(path):
+def web_results(path, build):
     report = json.loads(path.read_text())
     cases = {}
     issues = ["Playwright a signalé une erreur globale."] if report.get("errors") else []
+
+    recorded = report.get("config", {}).get("metadata", {}).get("argusBuild")
+    if recorded and recorded != build:
+        return {}, ["Le build consigné par Playwright diffère du manifeste."]
 
     def visit(suite, parents):
         parents = [*parents, suite["title"]]
@@ -65,7 +73,11 @@ def web_results(path):
                 name = " › ".join(filter(None, [test.get("projectName"), *parents, spec["title"]]))
                 attempts = test.get("results", [])
                 status = {"unexpected": "fail", "flaky": "flaky", "skipped": "skip"}.get(test["status"], "blocked")
-                if test["status"] == "expected" and attempts:
+                if status != "skip" and (not attempts or attempts[-1]["status"] == "interrupted"):
+                    status = "blocked"
+                elif test["status"] == "expected" and test.get("expectedStatus") == "failed" and attempts[-1]["status"] == "failed":
+                    status = "xfail"
+                elif test["status"] == "expected" and attempts:
                     status = "pass" if attempts[-1]["status"] == "passed" else "skip"
                 add(cases, name, status)
         for child in suite.get("suites", []):
@@ -76,7 +88,68 @@ def web_results(path):
     return cases, issues
 
 
-def read_target(target, base):
+def local_evidence(base, reference):
+    if not isinstance(reference, str) or not reference.strip():
+        return False
+    path = (base / reference).resolve()
+    return base.resolve() in path.parents and path.is_file() and path.stat().st_size > 0
+
+
+def read_runs(kind, source, base, build, target, used):
+    sources = source if isinstance(source, list) else [source]
+    if not sources or (len(sources) > 1 and kind != "maestro"):
+        raise ValueError("Choisir un JSON Playwright ou une suite de runs Maestro.")
+    cases, issues, origins = {}, [], []
+    first_device = None
+    for ref in sources:
+        folder = base / ref
+        artifact = folder / "junit.xml" if kind == "maestro" else folder
+        origins.append(ref)
+        try:
+            if kind == "maestro":
+                identity = folder / "target.txt"
+                device, app = identity.read_text().splitlines() if identity.exists() else ("", "")
+                if device:
+                    origins[-1] += f" · {device} · {app}"
+                else:
+                    origins[-1] += " · appareil non consigné"
+                if (target.get("device", device) != device or target.get("appId", app) != app
+                        or first_device is not None and first_device != (device, app)
+                        or len(sources) > 1 and not (device and app)):
+                    issues.append(f"{ref} · Identité de la cible incompatible ou absente.")
+                    continue
+                recorded = folder / "build.txt"
+                if recorded.exists() and recorded.read_text().strip() != build:
+                    issues.append(f"{ref} · Le build consigné par Maestro diffère du manifeste.")
+                    continue
+                current, warnings = mobile_results(folder)
+            else:
+                current, warnings = web_results(folder, build)
+            issues.extend(warnings)
+            if not current:
+                continue
+            fingerprint = (kind, hashlib.sha256(artifact.read_bytes()).digest())
+            if fingerprint in used:
+                issues.append(f"{ref} · Résultat déjà utilisé dans cette campagne.")
+                continue
+            used.add(fingerprint)
+            if kind == "maestro":
+                first_device = (device, app)
+            for name, status in current.items():
+                previous = cases.get(name)
+                if status == "pass" and previous in {"fail", "flaky"}:
+                    status = "flaky"
+                elif status in {"skip", "blocked"} and previous in {"fail", "flaky"}:
+                    status = previous
+                cases[name] = status
+        except (OSError, ValueError, TypeError, KeyError, AttributeError, IndexError, ET.ParseError):
+            issues.append(f"{ref} · Pièce d’exécution absente ou illisible.")
+    if not cases:
+        issues.append("Aucun scénario enregistré.")
+    return cases, issues, " / ".join(origins)
+
+
+def read_target(target, base, build, used):
     plan = target["planned"]
     if not isinstance(plan, list) or not plan or len(plan) != len(set(plan)):
         raise ValueError("Chaque cible demande une liste planned de noms distincts.")
@@ -87,22 +160,19 @@ def read_target(target, base):
     source = target[kind]
     if kind == "observations":
         cases = {}
+        issues = []
         for observation in source:
             status = observation["status"]
             if status not in LABEL:
                 raise ValueError(f"Statut inconnu ({status})")
             if status in {"pass", "fail", "flaky"} and not observation.get("evidence"):
                 raise ValueError("Une observation exécutée demande une preuve.")
+            if status in {"pass", "fail", "flaky", "xfail"} and not local_evidence(base, observation.get("evidence")):
+                issues.append(f"{observation['name']} · Pièce justificative absente ou vide.")
+                status = "blocked"
             add(cases, observation["name"], status)
-        return cases, [], "Observations"
-    try:
-        reader = mobile_results if kind == "maestro" else web_results
-        cases, issues = reader(base / source)
-    except FileNotFoundError:
-        cases, issues = {}, ["Pièce d’exécution manquante."]
-    if not cases:
-        issues.append("Aucun scénario enregistré.")
-    return cases, issues, source
+        return cases, issues, "Observations consignées"
+    return read_runs(kind, source, base, build, target, used)
 
 
 def h(value):
@@ -125,20 +195,24 @@ def build_html(campaign, base):
     sections = []
     planned = reached = 0
     all_issues = []
+    used = set()
     if not campaign["targets"]:
         raise ValueError("La campagne demande au moins une cible.")
     for target in campaign["targets"]:
-        cases, issues, source = read_target(target, base)
+        cases, issues, source = read_target(target, base, campaign["build"], used)
         names = target["planned"]
-        reached += sum(cases.get(name) in {"pass", "fail", "flaky"} for name in names)
         planned += len(names)
-        all_issues.extend(issues)
         notes = dict(target.get("notes", {}))
         if "observations" in target:
             for obs in target["observations"]:
                 notes[obs["name"]] = {**notes.get(obs["name"], {}), **obs}
+        raw = cases.copy()
+        for name, note in notes.items():
+            if note.get("conflict"):
+                cases[name] = "blocked"
+        reached += sum(cases.get(name) in {"pass", "fail", "flaky", "xfail"} for name in names)
         names = list(dict.fromkeys([*names, *cases]))
-        priority = {"fail": 0, "blocked": 1, "flaky": 2, "skip": 3, "pass": 4}
+        priority = {"fail": 0, "blocked": 1, "flaky": 2, "xfail": 3, "skip": 4, "pass": 5}
         names.sort(key=lambda name: priority[cases.get(name, "blocked")])
         rows = []
         for name in names:
@@ -146,22 +220,29 @@ def build_html(campaign, base):
             totals[status] += 1
             note = notes.get(name, {})
             details = []
+            if note.get("conflict"):
+                details.append(f"<div><b>À arbitrer</b> {h(note['conflict'])}</div>")
+                details.append(f"<div><b>Résultat brut</b> {LABEL[raw.get(name, 'blocked')]}</div>")
             for key, label in (("severity", "Sévérité"), ("expected", "Attendu"),
                                ("actual", "Observé"), ("repro", "Reproduire"),
                                ("evidence", "Preuve"), ("action", "Suite")):
                 if note.get(key):
                     details.append(f"<div><b>{label}</b> {h(note[key])}</div>")
             if note.get("screenshot"):
-                details.append(screenshot(base, note["screenshot"]))
+                try:
+                    details.append(screenshot(base, note["screenshot"]))
+                except (OSError, ValueError):
+                    issues.append(f"{name} · Capture supplémentaire absente ou illisible.")
             rows.append(f"<tr><td><strong>{h(name)}</strong>{''.join(details)}</td>"
                         f"<td class='{status}'>{LABEL[status]}</td></tr>")
+        all_issues.extend(issues)
         warnings = "".join(f"<p class='blocked'>{h(issue)}</p>" for issue in issues)
-        sections.append(f"<section><h2>{h(target['label'])}</h2><small>{h(source)}</small>"
+        sections.append(f"<section><h2>{h(target['label'])}</h2><small>Source · {h(source)}</small>"
                         f"{warnings}<table><thead><tr><th>Scénario et constats</th><th>Résultat</th>"
                         f"</tr></thead><tbody>{''.join(rows)}</tbody></table></section>")
     if totals["fail"]:
         verdict = "Échecs observés"
-    elif all_issues or totals["blocked"] or totals["skip"] or totals["flaky"]:
+    elif all_issues or totals["blocked"] or totals["skip"] or totals["flaky"] or totals["xfail"]:
         verdict = "À examiner"
     else:
         verdict = "Parcours vérifiés"
@@ -172,9 +253,9 @@ def build_html(campaign, base):
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">
 <title>Argus · Rapport de tests</title><style>{css}</style></head><body>
 <header>ARGUS <span>Rapport de tests</span></header><h1>{h(campaign['title'])}</h1>
-<p>{h(campaign['scope'])}</p><small>Version testée · {h(campaign['build'])}</small>
+<p>{h(campaign['scope'])}</p><small>Build déclaré · {h(campaign['build'])}</small>
 <h2>{verdict}</h2><div class="metrics">{cards}</div>
-<p><b>{reached} / {planned}</b> scénarios prévus avec un résultat de test.</p>
+<p><b>{reached} / {planned}</b> scénarios prévus avec un résultat exploitable.</p>
 {''.join(sections)}<footer>Argus · Document généré le {generated}</footer></body></html>"""
 
 

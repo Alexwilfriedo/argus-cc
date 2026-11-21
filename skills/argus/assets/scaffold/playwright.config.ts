@@ -31,6 +31,7 @@ const activeProjects = argus.browsers.map((key) => {
   const base = BROWSER_DEVICE[key];
   return {
     name: base.name,
+    testIgnore: /\.setup\.ts$/,
     use: { ...base.use, storageState: STORAGE_STATE },
     dependencies: ['setup'],
   };
@@ -38,6 +39,7 @@ const activeProjects = argus.browsers.map((key) => {
 
 export default defineConfig({
   testDir: './tests',
+  metadata: { argusBuild: process.env.ARGUS_BUILD ?? '' },
   fullyParallel: true,
   // Interdit un test.only oublié en CI (échoue au lieu de tout filtrer).
   forbidOnly: IS_CI,
@@ -45,7 +47,9 @@ export default defineConfig({
   workers: IS_CI ? 2 : undefined,
 
   // Snapshots de référence rangés par fichier de test.
-  snapshotPathTemplate: '{testDir}/__screenshots__/{testFilePath}/{arg}{ext}',
+  snapshotPathTemplate: activeProjects.length > 1
+    ? '{testDir}/__screenshots__/{testFilePath}/{arg}{-projectName}{ext}'
+    : '{testDir}/__screenshots__/{testFilePath}/{arg}{ext}',
 
   // Console lisible + HTML + JSON + JUnit (intégration CI).
   reporter: [
