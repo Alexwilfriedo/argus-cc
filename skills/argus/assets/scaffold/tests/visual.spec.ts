@@ -18,7 +18,6 @@ import { argus } from '../argus.config';
 const DIFF_BUDGET: Record<string, { maxDiffPixelRatio: number; threshold: number }> = {
   REGRESS: { maxDiffPixelRatio: argus.thresholds.visualDiffRatio, threshold: 0.2 },
   DEMO: { maxDiffPixelRatio: 0.05, threshold: 0.3 },
-  EXPLORE: { maxDiffPixelRatio: 1, threshold: 0.2 },
 };
 const budget = DIFF_BUDGET[argus.mode] ?? DIFF_BUDGET.REGRESS;
 
@@ -57,17 +56,17 @@ test.describe('argus — régression visuelle (full-page)', () => {
       const snapshotName = `${routeSlug}-${bp.name}-${bp.width}x${bp.height}.png`;
 
       test(`${routeSlug} @ ${bp.name} (${bp.width}x${bp.height})`, async ({ page }) => {
-        if (argus.mode === 'EXPLORE') {
-          test
-            .info()
-            .annotations.push({ type: 'argus-mode', description: 'EXPLORE (non-bloquant)' });
-        }
-
         // Viewport AVANT navigation pour un layout correct.
         await page.setViewportSize({ width: bp.width, height: bp.height });
         await page.goto(route, { waitUntil: 'domcontentloaded' }); // baseURL via config
         await stabilizePage(page);
 
+        if (argus.mode === 'EXPLORE') {
+          await test.info().attach('capture-exploratoire', {
+            body: await page.screenshot({ fullPage: true }), contentType: 'image/png',
+          });
+          test.skip(true, 'Capture exploratoire enregistrée. Comparaison visuelle non exécutée.');
+        }
         await expect(page).toHaveScreenshot(snapshotName, {
           fullPage: true,
           animations: 'disabled',

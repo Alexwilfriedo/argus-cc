@@ -32,7 +32,8 @@ function flatten(suites, trail = []) {
     const nextTrail = suite.title ? [...trail, suite.title] : trail;
     for (const spec of suite.specs ?? []) {
       for (const t of spec.tests ?? []) {
-        const last = (t.results ?? [])[t.results.length - 1] ?? {};
+        const attempts = t.results ?? [];
+        const last = attempts.at(-1) ?? {};
         const errors = [];
         for (const r of t.results ?? []) {
           for (const e of r.errors ?? []) if (e?.message) errors.push(stripAnsi(e.message));
@@ -42,7 +43,7 @@ function flatten(suites, trail = []) {
           title: [...nextTrail, spec.title].join(' › '),
           file: spec.file ?? suite.file ?? '',
           project: t.projectName ?? '',
-          status: t.status ?? last.status ?? 'unknown', // expected|unexpected|flaky|skipped
+          status: resultStatus(t, last),
           durationMs: last.duration ?? 0,
           errors: [...new Set(errors)],
           attachments: (t.results ?? []).flatMap((r) => r.attachments ?? []),
@@ -62,11 +63,12 @@ function esc(s) {
   return String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
 
-// --- Sévérité Argus à partir du statut Playwright ----------------------------
-function severityOf(status) {
-  if (status === 'unexpected') return 'critical';
-  if (status === 'flaky') return 'minor';
-  return null; // expected / skipped → pas un finding
+function resultStatus(test, last) {
+  if (test.status === 'skipped') return 'skipped';
+  if (!last.status || last.status === 'interrupted') return 'unknown';
+  if (test.status !== 'expected') return test.status ?? 'unknown';
+  if (last.status === 'failed' && test.expectedStatus === 'failed') return 'xfail';
+  return last.status === 'passed' ? 'expected' : 'unknown';
 }
 
 // --- Extraction des Core Web Vitals depuis les attachments -------------------
@@ -89,51 +91,43 @@ const summary = {
   flaky: cases.filter((c) => c.status === 'flaky').length,
   skipped: cases.filter((c) => c.status === 'skipped').length,
 };
-const gate = summary.failed > 0 ? 'fail' : 'pass';
+let gate = 'pass';
+if (summary.failed || report.errors?.length) gate = 'fail';
+else if (!summary.total || summary.passed !== summary.total) gate = 'incomplete';
 
-// CWV agrégés (dernière valeur par métrique vue dans les attachments).
-const cwv = {};
+// Une ligne par mesure et par cas, pour conserver les différences entre cibles.
+const cwvRows = [];
 for (const c of cases) {
   for (const att of c.attachments) {
     if (!/core-web-vitals/i.test(att.name ?? '')) continue;
     const data = readAttachmentJson(att);
-    const vitals = data?.vitals;
-    if (!vitals) continue;
-    const list = Array.isArray(vitals) ? vitals : Object.values(vitals);
-    for (const v of list) if (v?.name) cwv[v.name] = v;
+    for (const metric of Object.values(data?.vitals ?? {})) {
+      if (!Number.isFinite(metric?.value)) continue;
+      const value = metric.name === 'CLS' ? metric.value.toFixed(3) : Math.round(metric.value) + ' ms';
+      cwvRows.push(`<tr><td>${esc(c.project)} · ${esc(c.title)}</td><td>${esc(metric.name)}</td><td>${value}</td></tr>`);
+    }
   }
 }
-const CWV_BUDGET = { LCP: 2500, CLS: 0.1, INP: 200, TTFB: 800, FCP: 1800 };
 
-// --- Rendu HTML --------------------------------------------------------------
-const findings = cases.filter((c) => severityOf(c.status));
+const statusLabels = { unexpected: 'Échec', flaky: 'Instable', xfail: 'Échec attendu', unknown: 'Non vérifié' };
+const findings = cases.filter(c => c.status !== 'expected' && c.status !== 'skipped');
 const ok = cases.filter((c) => c.status === 'expected');
 
 const metric = (label, value, cls = '') =>
   `<div class="metric ${cls}"><div class="v">${value}</div><div class="l">${label}</div></div>`;
 
-const cwvRows = Object.keys(CWV_BUDGET)
-  .filter((k) => cwv[k])
-  .map((k) => {
-    const v = cwv[k];
-    const val = k === 'CLS' ? Number(v.value).toFixed(3) : Math.round(v.value);
-    const good = v.value <= CWV_BUDGET[k];
-    return `<tr><td>${k}</td><td class="${good ? 'good' : 'bad'}">${val}${k === 'CLS' ? '' : ' ms'}</td><td>${CWV_BUDGET[k]}${k === 'CLS' ? '' : ' ms'}</td><td>${esc(v.rating ?? '')}</td></tr>`;
-  })
-  .join('');
-
 const findingCards = findings.length
   ? findings
       .map((c) => {
-        const sev = severityOf(c.status);
-        return `<div class="card ${sev}">
-        <div class="card-h"><span class="badge ${sev}">${sev}</span> <strong>${esc(c.title)}</strong></div>
+        const label = statusLabels[c.status] ?? 'Non vérifié';
+        return `<div class="card ${esc(c.status)}">
+        <div class="card-h"><span class="badge ${esc(c.status)}">${label}</span> <strong>${esc(c.title)}</strong></div>
         <div class="meta">${esc(c.project)} · ${esc(c.file)} · ${Math.round(c.durationMs)} ms</div>
         ${c.errors.length ? `<pre>${esc(c.errors.join('\n\n'))}</pre>` : ''}
       </div>`;
       })
       .join('')
-  : '<p class="muted">Aucun échec. 🎉</p>';
+  : '<p class="muted">Aucun défaut classé parmi les cas enregistrés.</p>';
 
 const okList = ok.length
   ? `<ul class="ok-list">${ok.map((c) => `<li>${esc(c.title)} <span class="muted">(${esc(c.project)})</span></li>`).join('')}</ul>`
@@ -153,26 +147,25 @@ const html = `<!doctype html>
   .metric .v{font-size:26px;font-weight:700}.metric .l{color:var(--muted);font-size:12px;margin-top:4px}
   .metric.pass .v{color:var(--ok)}.metric.fail .v{color:var(--bad)}.metric.flaky .v{color:var(--warn)}
   .gate{display:inline-block;padding:6px 14px;border-radius:999px;font-weight:700}
-  .gate.pass{background:rgba(46,204,113,.15);color:var(--ok)}.gate.fail{background:rgba(232,93,38,.15);color:var(--bad)}
+  .gate.incomplete{color:var(--warn)}.gate.pass{background:rgba(46,204,113,.15);color:var(--ok)}.gate.fail{background:rgba(232,93,38,.15);color:var(--bad)}
   table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
   th,td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--line)}th{color:var(--muted);font-weight:600}
   td.good{color:var(--ok)}td.bad{color:var(--bad)}
   .card{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--bad);border-radius:8px;padding:14px;margin-bottom:12px}
-  .card.minor{border-left-color:var(--warn)}
+  .card.flaky{border-left-color:var(--warn)}
   .card-h{font-size:14px}.meta{color:var(--muted);font-size:12px;margin:6px 0}
   .badge{font-size:11px;text-transform:uppercase;padding:2px 8px;border-radius:999px;font-weight:700}
-  .badge.critical{background:rgba(232,93,38,.18);color:var(--bad)}.badge.minor{background:rgba(241,196,15,.18);color:var(--warn)}
+  .badge.unexpected{background:rgba(232,93,38,.18);color:var(--bad)}.badge.flaky{background:rgba(241,196,15,.18);color:var(--warn)}
   pre{background:#0b0d11;border:1px solid var(--line);border-radius:6px;padding:10px;overflow:auto;font-size:12px;white-space:pre-wrap}
   .ok-list{columns:2;gap:24px;list-style:none;padding:0}.ok-list li{margin:4px 0;break-inside:avoid}
   .muted{color:var(--muted)}footer{margin-top:40px;color:var(--muted);font-size:12px;border-top:1px solid var(--line);padding-top:16px}
 </style></head><body><div class="wrap">
   <h1>Argus — rapport QA</h1>
   <div class="sub">
-    ${esc(process.env.ARGUS_BASE_URL ?? '')} ·
-    ${esc(process.env.ARGUS_MODE ?? 'REGRESS')} ·
+    ${esc(report.config?.metadata?.argusBuild ?? '')} ·
     ${esc(stats.startTime ?? '')} ·
-    durée ${Math.round((stats.duration ?? 0) / 1000)} s ·
-    <span class="gate ${gate}">gate: ${gate}</span>
+    ${Number.isFinite(stats.duration) ? `durée ${Math.round(stats.duration / 1000)} s` : 'durée non mesurée'} ·
+    <span class="gate ${gate}">Bilan des tests · ${{ pass: 'réussis', fail: 'échec', incomplete: 'incomplet' }[gate]}</span>
   </div>
 
   <div class="metrics">
@@ -183,12 +176,13 @@ const html = `<!doctype html>
     ${metric('ignorés', summary.skipped)}
   </div>
 
-  ${cwvRows ? `<h2>Core Web Vitals</h2><table><tr><th>Métrique</th><th>Valeur</th><th>Budget</th><th>Note</th></tr>${cwvRows}</table>` : ''}
+  ${cwvRows.length ? `<h2>Core Web Vitals</h2><table><tr><th>Cas</th><th>Métrique</th><th>Valeur</th></tr>${cwvRows.join('')}</table>` : ''}
 
-  <h2>Findings (${findings.length})</h2>
+  <h2>Résultats à examiner (${findings.length})</h2>
+  ${report.errors?.length ? '<p>Erreur globale Playwright. Consulter le résultat brut du run.</p>' : ''}
   ${findingCards}
 
-  <h2>✅ Ce qui fonctionne (${ok.length})</h2>
+  <h2>Tests réussis (${ok.length})</h2>
   ${okList}
 
   <footer>Généré par Argus (Claude Code) · ${esc(stats.startTime ?? '')}</footer>

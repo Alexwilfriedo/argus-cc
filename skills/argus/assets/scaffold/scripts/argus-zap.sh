@@ -9,25 +9,7 @@
 #     (owasp/zap2docker-stable est DEPRECIE — ZAP n'est plus un projet OWASP).
 #   - Rapports ecrits dans ./argus-report/zap.{html,json,md}
 #   - Code de sortie : non-zero UNIQUEMENT sur FAIL (grace a -I), jamais sur WARN.
-#   - Auth optionnelle (token Bearer / cookie) injectee via les variables d'env
-#     ZAP natives, passees au conteneur avec `docker run -e`.
-#
-# Usage :
-#   ARGUS_BASE_URL=https://staging.mon-app.ci ./scripts/argus-zap.sh
-#
-# Scan authentifie (le header est ajoute a TOUTES les requetes) :
-#   ARGUS_ZAP_AUTH_HEADER_VALUE="Bearer eyJ..." \
-#   ARGUS_BASE_URL=https://staging.mon-app.ci ./scripts/argus-zap.sh
-#
-# Cas particulier : si le token n'est pas attache par les variables d'env
-# (certains flux Automation Framework), basculer sur une regle "replacer" :
-#   ARGUS_ZAP_EXTRA='-z "-config replacer.full_list(0).description=argus-auth \
-#     -config replacer.full_list(0).enabled=true \
-#     -config replacer.full_list(0).matchtype=REQ_HEADER \
-#     -config replacer.full_list(0).matchstr=Authorization \
-#     -config replacer.full_list(0).regex=false \
-#     -config replacer.full_list(0).replacement=Bearer eyJ..."'
-#
+#   - Contrôle anonyme. Le projet fournit un rapport expurgé pour les parcours authentifiés.
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
@@ -64,14 +46,11 @@ RULES_FILE="${ARGUS_ZAP_RULES:-}"
 # Options ZAP additionnelles libres (avance, ex : regle replacer via -z).
 EXTRA_OPTS="${ARGUS_ZAP_EXTRA:-}"
 
-# --- Auth optionnelle (variables d'env ZAP natives) ------------------------
-# Lues par les scripts ZAP AVANT le demarrage de ZAP, donc passees via docker -e.
-#   ARGUS_ZAP_AUTH_HEADER_VALUE : valeur complete, ex "Bearer eyJ..." ou "session=abc"
-#   ARGUS_ZAP_AUTH_HEADER       : nom du header (defaut cote ZAP : Authorization)
-#   ARGUS_ZAP_AUTH_HEADER_SITE  : restreint l'injection aux sites contenant cette chaine
-AUTH_HEADER_VALUE="${ARGUS_ZAP_AUTH_HEADER_VALUE:-}"
-AUTH_HEADER_NAME="${ARGUS_ZAP_AUTH_HEADER:-}"
-AUTH_HEADER_SITE="${ARGUS_ZAP_AUTH_HEADER_SITE:-}"
+# Le site peut référencer des domaines tiers. Préserver la portée des identifiants.
+if [[ -n "${ARGUS_ZAP_AUTH_HEADER_VALUE:-}" || -n "${ZAP_AUTH_HEADER_VALUE:-}" ]]; then
+  echo "[argus-zap] Le lanceur générique accepte les contrôles anonymes. Pour un contrôle authentifié, importer le rapport expurgé du projet." >&2
+  exit 2
+fi
 
 # ---------------------------------------------------------------------------
 # Validation des entrees (fail fast)
@@ -95,9 +74,7 @@ fi
 mkdir -p "$REPORT_DIR"
 # Chemin absolu requis par le montage Docker.
 REPORT_DIR_ABS="$(cd "$REPORT_DIR" && pwd)"
-# Le conteneur ZAP tourne en uid 1000 (user "zap") : le dossier monte doit etre
-# inscriptible par cet uid, sinon l'ecriture des rapports echoue (Linux/CI surtout).
-chmod 777 "$REPORT_DIR_ABS"
+# Conserver les permissions du projet. Le répertoire doit être inscriptible par le conteneur.
 
 # ---------------------------------------------------------------------------
 # Construction des arguments Docker
@@ -114,14 +91,6 @@ if [[ "$TARGET_URL" =~ ^https?://(localhost|127\.0\.0\.1)([:/]|$) ]]; then
   ZAP_TARGET="${TARGET_URL/localhost/host.docker.internal}"
   ZAP_TARGET="${ZAP_TARGET/127.0.0.1/host.docker.internal}"
   echo "[argus-zap] Cible locale -> reecrite en $ZAP_TARGET (host.docker.internal)."
-fi
-
-# Injection de l'auth UNIQUEMENT si une valeur est fournie.
-if [[ -n "$AUTH_HEADER_VALUE" ]]; then
-  docker_args+=( -e "ZAP_AUTH_HEADER_VALUE=${AUTH_HEADER_VALUE}" )
-  [[ -n "$AUTH_HEADER_NAME" ]] && docker_args+=( -e "ZAP_AUTH_HEADER=${AUTH_HEADER_NAME}" )
-  [[ -n "$AUTH_HEADER_SITE" ]] && docker_args+=( -e "ZAP_AUTH_HEADER_SITE=${AUTH_HEADER_SITE}" )
-  echo "[argus-zap] Auth activee : header '${AUTH_HEADER_NAME:-Authorization}' injecte sur les requetes."
 fi
 
 docker_args+=( "$ZAP_IMAGE" zap-baseline.py )

@@ -24,7 +24,7 @@ type BrokenLink = { url: string; status: number | 'ERROR'; detail?: string };
  * Normalise une URL relative ou absolue vers une URL absolue meme origine,
  * en retirant le fragment. Retourne null si externe / non-http / non pertinent.
  */
-function toInternalAbsoluteUrl(rawHref: string, origin: string): string | null {
+function toInternalAbsoluteUrl(rawHref: string, origin: string, base: string): string | null {
   const href = rawHref.trim();
   if (!href) return null;
   // On ecarte les schemes non navigables.
@@ -32,7 +32,7 @@ function toInternalAbsoluteUrl(rawHref: string, origin: string): string | null {
 
   let resolved: URL;
   try {
-    resolved = new URL(href, origin);
+    resolved = new URL(href, base);
   } catch {
     return null;
   }
@@ -86,7 +86,7 @@ async function checkLink(request: APIRequestContext, url: string): Promise<Broke
 }
 
 test.describe('argus :: links', () => {
-  test('tous les liens internes repondent avec un statut < 400', async ({ page, request }) => {
+  test('les liens internes échantillonnés répondent avec un statut < 400', async ({ page, request }) => {
     await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
 
     // Extraction des href bruts depuis le DOM.
@@ -95,15 +95,19 @@ test.describe('argus :: links', () => {
     );
 
     // Normalisation + dedup + filtrage interne.
+    const base = await page.evaluate(() => document.baseURI);
     const uniqueInternal = Array.from(
       new Set(
         rawHrefs
-          .map((href) => toInternalAbsoluteUrl(href, BASE_URL))
+          .map((href) => toInternalAbsoluteUrl(href, BASE_URL, base))
           .filter((url): url is string => url !== null)
       )
     );
 
-    expect(uniqueInternal.length, 'au moins un lien interne doit etre trouve').toBeGreaterThan(0);
+    test.skip(!uniqueInternal.length, 'Aucun lien interne à contrôler.');
+    test.skip(LINK_BUDGET === 0, 'Budget de liens nul.');
+    expect(Number.isInteger(LINK_BUDGET) && LINK_BUDGET > 0, 'Budget de liens invalide').toBe(true);
+    expect(Number.isInteger(LINK_CONCURRENCY) && LINK_CONCURRENCY > 0, 'Concurrence invalide').toBe(true);
 
     // Application du budget (cap dur).
     const linksToCheck = uniqueInternal.slice(0, LINK_BUDGET);

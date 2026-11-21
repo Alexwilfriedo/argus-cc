@@ -74,6 +74,9 @@ function runNpmAudit() {
     throw new Error(`Impossible d'exécuter \"npm audit\" : ${result.error.message}`);
   }
 
+  if (result.signal || ![0, 1].includes(result.status)) {
+    throw new Error('Exécution npm audit interrompue ou en erreur.');
+  }
   const stdout = (result.stdout ?? '').trim();
   if (!stdout) {
     const stderr = (result.stderr ?? '').trim();
@@ -238,6 +241,19 @@ function main() {
     return;
   }
 
+  const summary = audit?.metadata?.vulnerabilities;
+  const levels = [...SEVERITY_ORDER, 'total'];
+  if (audit?.auditReportVersion !== 2 || !summary || !audit.vulnerabilities ||
+      typeof audit.vulnerabilities !== 'object' || Array.isArray(audit.vulnerabilities) ||
+      !levels.every(key => Number.isInteger(summary[key]) && summary[key] >= 0) ||
+      summary.total !== SEVERITY_ORDER.reduce((sum, key) => sum + summary[key], 0) ||
+      summary.total !== Object.keys(audit.vulnerabilities).length ||
+      SEVERITY_ORDER.some(level => Object.values(audit.vulnerabilities).filter(v => v?.severity === level).length !== summary[level]) ||
+      !FAIL_ON.size || [...FAIL_ON].some(key => !SEVERITY_ORDER.includes(key))) {
+    console.error('Analyse indéterminée : compteurs npm audit ou seuil de sévérité invalides.');
+    process.exitCode = 2;
+    return;
+  }
   const counts = extractCounts(audit);
   const findings = extractFindings(audit);
 

@@ -34,8 +34,7 @@ THRESHOLDS   : { lcp_ms: 2500, cls: 0.1, inp_ms: 200, ttfb_ms: 800,
 LOCALE       : { lang: fr, currency: XOF, sample_amount_format: "1 234 567 FCFA" }
 ARTIFACTS    : argus-report/<RUN_NAME>/   # screenshots, traces, har, video, reports
 BASELINE     : tests/**/__screenshots__   # snapshots visuels (gérés par Playwright)
-GATE         : { fail_on: [blocker, critical, major], fail_on_new_finding: true,
-                 fail_on_visual_diff: true }
+
 ```
 Ne demande à l'utilisateur que ce qui manque ; déduis le reste du repo. Champs requis :
 BASE_URL, ENV, MODE.
@@ -43,7 +42,7 @@ BASE_URL, ENV, MODE.
 ═══════════════════════════════════════════════════════════════════════════════
 ## 2. Modes opératoires
 ═══════════════════════════════════════════════════════════════════════════════
-**EXPLORE** — Audit exhaustif et exploratoire. Découvre, teste toutes les dimensions (§6),
+**EXPLORE** — Audit exploratoire. Choisit les dimensions applicables (§6),
 produit findings + métriques + rapport. Headed possible. Mode par défaut pour un audit ad hoc.
 
 **DEMO** — Exécute la logique EXPLORE, MAIS surcouche cinématique pour capture vidéo (YouTube) :
@@ -52,9 +51,9 @@ elle ne le remplace pas.
 
 **REGRESS** — Mode CI / non-régression. Headless, déterministe, parallélisé.
 1. Exécute la suite codifiée `@playwright/test` (specs issues des runs EXPLORE précédents).
-2. Compare aux baselines (régression visuelle + findings connus).
+2. Compare aux baselines visuelles disponibles dans le projet.
 3. Balayage *diff-aware* : ré-audite en priorité les routes/composants touchés par le diff.
-4. Émet JSON + JUnit + exit code (§8). Aucun `sleep` arbitraire, aucune action non déterministe.
+4. Émet les fichiers des reporters configurés et le code de la commande. Aucun `sleep` arbitraire, aucune action non déterministe.
 Toute trouvaille EXPLORE stable DOIT être codifiée en spec ici — c'est ainsi que la couverture
 s'accumule.
 
@@ -104,7 +103,7 @@ On ne teste pas « toutes les pages ». On teste intelligemment sous BUDGET :
 ## 5. Boucle d'exécution
 ═══════════════════════════════════════════════════════════════════════════════
 SETUP → DISCOVER → PLAN → pour chaque cible : EXÉCUTER (§6) → CAPTURER PREUVE →
-TRIER (sévérité §8) → VÉRIFIER (re-run pour tuer le flake) → REPORTER → [CI] GATER.
+TRIER (sévérité §8) → VÉRIFIER (reprendre les échecs ambigus en conservant les deux résultats) → REPORTER → [CI] GATER.
 
 Chaque finding doit être REPRODUCTIBLE : url + sélecteur + viewport + navigateur +
 expected/actual + preuve + steps + fix suggéré. Sans ça, ce n'est pas un finding.
@@ -127,9 +126,8 @@ expected/actual + preuve + steps + fix suggéré. Sans ça, ce n'est pas un find
 - **SEO/META** : title, meta description, canonical, OG/Twitter, hreflang, hiérarchie Hn unique,
   `<html lang>`, données structurées, sitemap/robots cohérents.
 - **SECURITY** (dimension complète, NON destructive — détection, pas exploitation) :
-  - **DAST** : scan dynamique OWASP ZAP baseline (`scripts/argus-zap.sh`) → XSS, injection,
-    en-têtes manquants, fuites d'info. Baseline = passif + actif sûr (pas de fuzzing destructif).
-  - **SCA** : CVE des dépendances (`scripts/argus-sca.mjs` → `npm audit` ; osv-scanner/Trivy si présents).
+  - **DAST** : si un rapport ZAP baseline est disponible, citer la cible, les pages effectivement observées et les alertes à qualifier.
+  - **SCA** : relever les résultats de `npm audit` et sa version de format. La présence d’un autre scanner indique seulement sa disponibilité.
   - **Headers/cookies/secrets** (`tests/security.spec.ts`) : CSP, HSTS (HTTPS only), X-Frame-Options,
     X-Content-Type-Options, Referrer-Policy, Permissions-Policy ; flags cookies (Secure/HttpOnly/SameSite) ;
     contenu mixte ; source maps & chemins sensibles (`.env`, `.git`…) exposés — avec garde anti
@@ -177,21 +175,12 @@ entrer dans la garde de non-régression.
 ═══════════════════════════════════════════════════════════════════════════════
 ## 8. Sévérité & gating CI
 ═══════════════════════════════════════════════════════════════════════════════
-| Sévérité | Définition | Effet CI |
-|----------|-----------|----------|
-| **blocker**  | app inutilisable / parcours critique cassé / perte de données / secret exposé | exit 2 |
-| **critical** | fonctionnalité majeure cassée, sans contournement | exit 2 |
-| **major**    | dégradation nette / régression a11y ou perf significative / contournement existe | exit 1 |
-| **minor**    | cosmétique, cas limite rare | warn |
-| **info**     | observation / amélioration | exit 0 |
-
-GATE (REGRESS) : échec si sévérité ∈ GATE.fail_on, OU nouveau finding absent de la baseline
-(si fail_on_new_finding), OU diff visuel > seuil (si fail_on_visual_diff). exit 0 = vert.
+Classer le défaut confirmé selon son impact observé : blocker pour une perte de données ou un parcours indispensable inutilisable, critical pour une fonction majeure indisponible, major pour une dégradation avec contournement, minor pour un défaut limité, info pour une observation. Conserver le résultat brut du test à côté du diagnostic. Le contrat des fichiers et les codes de sortie figurent dans `references/report-format.md`.
 
 ═══════════════════════════════════════════════════════════════════════════════
 ## 9. Déterminisme & anti-flake (surtout REGRESS)
 ═══════════════════════════════════════════════════════════════════════════════
 - Waits sur ÉTAT (élément visible / réseau idle / réponse reçue), jamais `sleep` fixe (sauf DEMO).
 - Sélecteurs stables : `getByRole` / `data-testid` > CSS fragile ; jamais d'index positionnel.
-- Avant de déclarer un échec : RE-RUN. Échec constant = bug ; intermittent = `@flaky` + quarantaine.
+- Conserver le premier résultat. Rejouer si cela aide à distinguer le produit, les données, le sélecteur et le moteur. Deux échecs identiques établissent une répétition ; vérifier la cause et l’impact avant de classer le défaut.
 - Fige l'aléa : horloge/seed mockés si l'app les expose ; gèle les animations pour le visuel.
