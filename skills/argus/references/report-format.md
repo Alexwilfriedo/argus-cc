@@ -1,8 +1,10 @@
 # Argus — Contrat de sortie (rapports)
 
+Pour le PDF de campagne web, mobile ou mixte, suivre `references/pdf.md`.
+
 > À lire au moment de produire un rapport. Deux publics : la **machine** (CI) et l'**humain**.
 > En mode REGRESS, le harness `@playwright/test` produit déjà le JSON et le JUnit via ses
-> reporters ; `scripts/render-report.mjs` transforme ce JSON en rapport HTML Argus.
+> reporters ; `scripts/argus-report.mjs` transforme ce JSON en rapport HTML Argus.
 
 ## A. `report.json` (machine / CI)
 ```json
@@ -30,7 +32,7 @@
 Le reporter `junit` de Playwright suffit pour l'intégration CI native (GitHub Actions, GitLab…).
 
 ## C. Rapport HTML Argus (humain)
-Généré par `scripts/render-report.mjs` à partir du JSON Playwright. Sections :
+Généré par `scripts/argus-report.mjs` à partir du JSON Playwright. Sections :
 - **Header** : BASE_URL · ENV · MODE · date · commit · durée.
 - **Bandeau métriques** : pages testées · checks · findings par sévérité · gate (vert/rouge) ·
   Δ vs run précédent (régressions / améliorations).

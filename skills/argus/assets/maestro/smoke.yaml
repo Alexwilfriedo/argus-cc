@@ -1,0 +1,7 @@
+appId: ${APP_ID}
+name: Ouverture de l’application
+---
+- launchApp
+- assertVisible:
+    id: ${READY_ID}
+- takeScreenshot: accueil

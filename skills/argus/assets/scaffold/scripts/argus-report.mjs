@@ -42,7 +42,7 @@ function flatten(suites, trail = []) {
           title: [...nextTrail, spec.title].join(' › '),
           file: spec.file ?? suite.file ?? '',
           project: t.projectName ?? '',
-          status: t.status ?? last.status ?? 'unknown', // expected|unexpected|flaky|skipped
+          status: t.status === 'expected' && last.status !== 'passed' ? 'skipped' : (t.status ?? 'unknown'), // expected|unexpected|flaky|skipped
           durationMs: last.duration ?? 0,
           errors: [...new Set(errors)],
           attachments: (t.results ?? []).flatMap((r) => r.attachments ?? []),
@@ -89,7 +89,9 @@ const summary = {
   flaky: cases.filter((c) => c.status === 'flaky').length,
   skipped: cases.filter((c) => c.status === 'skipped').length,
 };
-const gate = summary.failed > 0 ? 'fail' : 'pass';
+let gate = 'pass';
+if (summary.failed || report.errors?.length) gate = 'fail';
+else if (!summary.total || summary.passed !== summary.total) gate = 'incomplete';
 
 // CWV agrégés (dernière valeur par métrique vue dans les attachments).
 const cwv = {};
@@ -133,7 +135,7 @@ const findingCards = findings.length
       </div>`;
       })
       .join('')
-  : '<p class="muted">Aucun échec. 🎉</p>';
+  : '<p class="muted">Aucun défaut classé parmi les cas enregistrés.</p>';
 
 const okList = ok.length
   ? `<ul class="ok-list">${ok.map((c) => `<li>${esc(c.title)} <span class="muted">(${esc(c.project)})</span></li>`).join('')}</ul>`
@@ -153,7 +155,7 @@ const html = `<!doctype html>
   .metric .v{font-size:26px;font-weight:700}.metric .l{color:var(--muted);font-size:12px;margin-top:4px}
   .metric.pass .v{color:var(--ok)}.metric.fail .v{color:var(--bad)}.metric.flaky .v{color:var(--warn)}
   .gate{display:inline-block;padding:6px 14px;border-radius:999px;font-weight:700}
-  .gate.pass{background:rgba(46,204,113,.15);color:var(--ok)}.gate.fail{background:rgba(232,93,38,.15);color:var(--bad)}
+  .gate.incomplete{color:var(--warn)}.gate.pass{background:rgba(46,204,113,.15);color:var(--ok)}.gate.fail{background:rgba(232,93,38,.15);color:var(--bad)}
   table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
   th,td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--line)}th{color:var(--muted);font-weight:600}
   td.good{color:var(--ok)}td.bad{color:var(--bad)}

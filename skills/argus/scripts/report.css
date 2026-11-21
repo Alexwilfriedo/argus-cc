@@ -1,0 +1,21 @@
+@page { size: A4; margin: 17mm 17mm 18mm; }
+* { box-sizing: border-box; }
+body { margin: 0; color: #172f40; font: 10.5pt/1.45 system-ui, sans-serif; print-color-adjust: exact; overflow-wrap: anywhere; }
+header { border-bottom: 2pt solid #15706a; padding-bottom: 6pt; color: #155750; font-weight: 750; letter-spacing: .13em; }
+header span { float: right; font-weight: 450; letter-spacing: .01em; }
+h1 { font-size: 29pt; line-height: 1.12; margin: 18pt 0 4pt; }
+h2 { font-size: 16pt; margin: 18pt 0 4pt; break-after: avoid; }
+p { margin: 5pt 0; } small, footer { color: #4a6272; }
+.metrics { display: flex; border-block: 1px solid #b9d9d4; background: #edf6f4; }
+.metrics div { flex: 1; padding: 8pt; font-size: 9pt; }
+.metrics strong { display: block; font-size: 20pt; }
+table { width: 100%; margin-top: 7pt; border-collapse: collapse; }
+th, td { text-align: left; padding: 5pt; vertical-align: top; border-bottom: 1px solid #cbd6da; }
+th { font-size: 9pt; color: #435567; background: #f1f4f6; }
+td:last-child { width: 23%; font-weight: 650; }
+td div { color: #455767; font-size: 9pt; margin: 2pt 0; }
+tr { break-inside: avoid; }
+.pass { color: #09614e; } .fail { color: #a23127; } .flaky, .blocked, .skip { color: #805000; }
+section > small { display: block; break-after: avoid; }
+footer { margin-top: 20pt; border-top: 1px solid #bdc9ce; padding-top: 6pt; font-size: 8pt; }
+td img { display: block; max-width: 100%; max-height: 58mm; margin: 7pt 0 2pt; object-fit: contain; }

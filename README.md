@@ -10,6 +10,12 @@ Trois modes : **EXPLORE** (audit), **DEMO** (capture YouTube), **REGRESS** (suit
 
 ---
 
+## Android, iOS et rapport PDF
+
+Demander à Argus de tester un binaire local, par exemple « Vérifie le refus des périodes inversées sur Android et iOS et remets le rapport PDF ». Argus prépare les cas métier, exécute les flows Maestro sur chaque appareil et rapproche le plan des résultats observés. Un produit mixte peut réunir les résultats Playwright, Maestro et les contrôles exploratoires dans le même PDF.
+
+[Guide Maestro](skills/argus/references/mobile.md) · [Génération du PDF](skills/argus/references/pdf.md)
+
 ## Installation
 
 ### Option A — Plugin (recommandé)
